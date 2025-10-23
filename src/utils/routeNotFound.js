@@ -1,7 +1,7 @@
 import logger from '#utils/logger.js';
 
 export const routeNotFound = (req, res, next) => {
-  const error = new Error('Not found');
+  const error = new Error('Route not found');
   logger.error(error);
 
   res.status(404).json({

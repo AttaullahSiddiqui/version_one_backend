@@ -1,106 +1,252 @@
-// import logging from '#configlogger.js';
-// import { signInSchema, signUpSchema } from '#validations/auth.validation.js';
-// import { formatValidationError } from '#utils/format.js';
-// import { authenticateUser, createUser } from '#services/auth.service.js';
-// import { jwtToken } from '#utils/jwt.js';
-// import { cookies } from '#utils/cookies.js';
+import User from '../models/user.model.js';
+import httpError from '#utils/httpError.js';
+import httpResponse from '#utils/httpResponse.js';
+import sendEmail from '#utils/email.js';
+import {
+  generateResetToken,
+  generateTokenExpiry,
+  isTokenExpired,
+  sanitizeUserData,
+} from '#utils/crypto.js';
 
-// export const signup = async (req, res, next) => {
-//   try {
-//     const validationResult = signUpSchema.safeParse(req.body);
+export default {
+  login: async (req, res, next) => {
+    try {
+      const { email, password } = req.body;
 
-//     if (!validationResult.success) {
-//       return res.status(400).json({
-//         error: 'Validation failed',
-//         details: formatValidationError(validationResult.error),
-//       });
-//     }
+      if (!email || !password) {
+        httpError(next, 'Please provide email and password', req, 400);
+        return;
+      }
 
-//     const { name, email, password, role } = validationResult.data;
+      const user = await User.findOne({ email }).select('+password');
 
-//     const user = await createUser({
-//       name,
-//       email,
-//       password,
-//       role,
-//     });
+      if (!user || !(await user.comparePassword(password))) {
+        httpError(next, 'Invalid email or password', req, 401);
+        return;
+      }
 
-//     const token = jwtToken.sign({
-//       id: user.id,
-//       email: user.email,
-//       role: user.role,
-//     });
+      user.lastLogin = Date.now();
+      await user.save({ validateBeforeSave: false });
 
-//     cookies.set(res, 'token', token);
+      const token = user.generateAuthToken();
+      const sanitizedUser = sanitizeUserData(user);
 
-//     logger.info(`User registered successfully: ${email}`);
-//     res.status(201).json({
-//       message: 'User registered successfully',
-//       data: { id: user.id, name, email, role },
-//     });
-//   } catch (e) {
-//     logger.error('Signup error', e);
-//     if (e.message === 'User with this email already exists')
-//       return res.status(409).json({ error: 'Email already exist' });
-//     next(e);
-//   }
-// };
+      httpResponse(req, res, 200, 'Login successful', {
+        user: sanitizedUser,
+        token,
+      });
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
 
-// export const signin = async (req, res, next) => {
-//   try {
-//     const validationResult = signInSchema.safeParse(req.body);
+  createAdmin: async (req, res, next) => {
+    try {
+      const { name, email, password } = req.body;
 
-//     if (!validationResult.success) {
-//       return res.status(400).json({
-//         error: 'Validation failed',
-//         details: formatValidationError(validationResult.error),
-//       });
-//     }
+      const existingAdmin = await User.findOne({ email });
+      if (existingAdmin) {
+        httpError(next, 'Email already registered', req, 400);
+        return;
+      }
 
-//     const { email, password } = validationResult.data;
+      const admin = await User.create({ name, email, password, role: 'admin' });
+      const sanitizedAdmin = sanitizeUserData(admin);
+      const token = admin.generateAuthToken();
 
-//     const user = await authenticateUser({
-//       email,
-//       password,
-//     });
+      httpResponse(req, res, 201, 'Admin created successfully', {
+        admin: sanitizedAdmin,
+        token,
+      });
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
 
-//     const token = jwtToken.sign({
-//       id: user.id,
-//       email: user.email,
-//       role: user.role,
-//     });
+  getMe: async (req, res, next) => {
+    try {
+      const user = await User.findById(req.user.id);
 
-//     cookies.set(res, 'token', token);
+      if (!user) {
+        httpError(next, 'User not found', req, 404);
+        return;
+      }
 
-//     logger.info(`User ${user.email} signed in successfully`);
+      httpResponse(req, res, 200, 'User details retrieved', user);
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
 
-//     return res.status(200).json({
-//       message: 'User authenticated successfully',
-//       user: {
-//         id: user.id,
-//         name: user.name,
-//         email: user.email,
-//         role: user.role,
-//       },
-//     });
-//   } catch (e) {
-//     logger.error('Signin error', e);
-//     if (e.message === 'User not found' || e.message === 'Invalid password')
-//       return res.status(401).json({ error: 'Invalid credentials' });
-//     next(e);
-//   }
-// };
+  updatePassword: async (req, res, next) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
 
-// export const signout = async (req, res, next) => {
-//   try {
-//     cookies.clear(res, 'token');
+      if (!currentPassword || !newPassword) {
+        httpError(next, 'Please provide both passwords', req, 400);
+        return;
+      }
 
-//     logger.info('User signed out successfully');
-//     return res.status(200).json({
-//       message: 'User signed out successfully',
-//     });
-//   } catch (e) {
-//     logger.error('Signout error', e);
-//     next(e);
-//   }
-// };
+      const user = await User.findById(req.user.id).select('+password');
+
+      if (!user) {
+        httpError(next, 'User not found', req, 404);
+        return;
+      }
+
+      if (!(await user.comparePassword(currentPassword))) {
+        httpError(next, 'Current password is incorrect', req, 401);
+        return;
+      }
+
+      user.password = newPassword;
+      await user.save();
+
+      const token = user.generateAuthToken();
+
+      httpResponse(req, res, 200, 'Password updated successfully', { token });
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+
+  updateDetails: async (req, res, next) => {
+    try {
+      const { name, email } = req.body;
+      const fieldsToUpdate = { ...(name && { name }), ...(email && { email }) };
+
+      if (Object.keys(fieldsToUpdate).length === 0) {
+        httpError(next, 'Please provide fields to update', req, 400);
+        return;
+      }
+
+      const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!user) {
+        httpError(next, 'User not found', req, 404);
+        return;
+      }
+
+      httpResponse(req, res, 200, 'User details updated', user);
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+
+  forgotPassword: async (req, res, next) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        httpError(next, 'Please provide an email', req, 400);
+        return;
+      }
+
+      const user = await User.findOne({ email });
+
+      if (!user) {
+        httpError(next, 'No user found with that email', req, 404);
+        return;
+      }
+
+      const { resetToken, hashedToken } = generateResetToken();
+      user.resetPasswordToken = hashedToken;
+      user.resetPasswordExpire = generateTokenExpiry(30);
+      await user.save({ validateBeforeSave: false });
+
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: 'Password Reset Token',
+          message: `Your password reset token is: ${resetToken}`,
+        });
+
+        httpResponse(req, res, 200, 'Reset token sent to email');
+      } catch (error) {
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save({ validateBeforeSave: false });
+
+        httpError(next, 'Email could not be sent', req, 500);
+      }
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+
+  resetPassword: async (req, res, next) => {
+    try {
+      const user = await User.findOne({
+        resetPasswordToken: req.params.token,
+        resetPasswordExpire: { $gt: Date.now() },
+      });
+
+      if (!user) {
+        httpError(next, 'Invalid or expired token', req, 400);
+        return;
+      }
+
+      if (!req.body.password) {
+        httpError(next, 'Please provide new password', req, 400);
+        return;
+      }
+
+      if (isTokenExpired(user.resetPasswordExpire)) {
+        httpError(next, 'Reset token has expired', req, 400);
+        return;
+      }
+
+      user.password = req.body.password;
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save();
+
+      const token = user.generateAuthToken();
+
+      httpResponse(req, res, 200, 'Password reset successful', { token });
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+
+  getAllAdmins: async (req, res, next) => {
+    try {
+      const admins = await User.find({ role: 'admin' }).select(
+        '-resetPasswordToken -resetPasswordExpire -password'
+      );
+
+      httpResponse(req, res, 200, 'Admins retrieved successfully', admins);
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+
+  deleteAdmin: async (req, res, next) => {
+    try {
+      const admin = await User.findOne({
+        _id: req.params.id,
+        role: 'admin',
+      });
+
+      if (!admin) {
+        httpError(next, 'Admin not found', req, 404);
+        return;
+      }
+
+      if (admin._id.toString() === req.user.id) {
+        httpError(next, 'You cannot delete your own account', req, 400);
+        return;
+      }
+
+      await admin.deleteOne();
+
+      httpResponse(req, res, 200, 'Admin deleted successfully');
+    } catch (error) {
+      httpError(next, error.message, req, 500);
+    }
+  },
+};
