@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import * as sourceMapSupport from 'source-map-support';
 import { red, blue, yellow, green, magenta } from 'colorette';
-import config from '#config/index.js';
+import { ENV, DATABASE_URL } from '#config/index.js';
 import { EApplicationEnvironment } from '#constants/application.js';
 
 // Enable source map support for stack traces
@@ -68,7 +68,7 @@ const fileLogFormat = format.printf(info => {
 });
 
 const consoleTransport = () => {
-  return config.ENV === EApplicationEnvironment.DEVELOPMENT
+  return ENV === EApplicationEnvironment.DEVELOPMENT
     ? [
         new transports.Console({
           level: 'info',
@@ -81,7 +81,7 @@ const consoleTransport = () => {
 const FileTransport = () => {
   return [
     new transports.File({
-      filename: path.join(__dirname, '../', '../', 'logs', `${config.ENV}.log`),
+      filename: path.join(__dirname, '../', '../', 'logs', `${ENV}.log`),
       level: 'info',
       format: format.combine(format.timestamp(), fileLogFormat),
     }),
@@ -90,13 +90,13 @@ const FileTransport = () => {
 
 const MongodbTransport = () => {
   return [
-    // new transports.MongoDB({
-    //   level: 'info',
-    //   db: config.DATABASE_URL,
-    //   metaKey: 'meta',
-    //   expireAfterSeconds: 3600 * 24 * 30,
-    //   collection: 'application-logs',
-    // }),
+    new transports.MongoDB({
+      level: 'info',
+      db: DATABASE_URL,
+      metaKey: 'meta',
+      expireAfterSeconds: 3600 * 24 * 30,
+      collection: 'application-logs',
+    }),
   ];
 };
 

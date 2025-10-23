@@ -1,12 +1,8 @@
-import DotenvFlow from 'dotenv-flow';
+import { config } from 'dotenv';
 
-DotenvFlow.config();
+config({
+  path: `.env.${process.env.ENV || 'development'}.local`,
+});
 
-export default {
-  PORT: process.env.PORT || 3000,
-  ENV: process.env.ENV,
-  TOKEN_SECRET: process.env.TOKEN_SECRET,
-  SERVER_URL: process.env.SERVER_URL,
-  CLIENT_URL: process.env.CLIENT_URL,
-  DATABASE_URL: process.env.DATABASE_URL,
-};
+export const { PORT, ENV, TOKEN_SECRET, SERVER_URL, CLIENT_URL, DATABASE_URL } =
+  process.env;

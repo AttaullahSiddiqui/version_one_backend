@@ -1,4 +1,4 @@
-import config from '../config/index.js';
+import {ENV} from '#config/index.js';
 import { EApplicationEnvironment } from '../constants/application.js';
 import responseMessage from '../constants/responseMessage.js';
 import logger from '#utils/logger.js';
@@ -20,7 +20,7 @@ export default (err, req, errStatusCode = 500) => {
 
   logger.info('ERROR', { meta: errorObj });
 
-  if (config.ENV === EApplicationEnvironment.PRODUCTION) {
+  if (ENV === EApplicationEnvironment.PRODUCTION) {
     delete errorObj.request.ip;
     delete errorObj.trace;
   }

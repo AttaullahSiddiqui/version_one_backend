@@ -12,7 +12,6 @@ import compression from 'compression';
 import { corsHandler } from '#utils/corsHandler.js';
 import globalErrorHandler from '#middleware/globalErrorHandler.js';
 // import { routeNotFound } from '#utils/routeNotFound.js';
-// import customLogger from '#config/custom-logger.js';
 import responseMessage from '#constants/responseMessage.js';
 import logger from '#utils/logger.js';
 import httpError from '#utils/httpError.js';

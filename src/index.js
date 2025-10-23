@@ -1,9 +1,9 @@
 import app from './app.js';
-import config from '#config/index.js';
+import {PORT,SERVER_URL} from '#config/index.js';
 import logger from '#utils/logger.js';
 import databaseService from '#config/database.js';
 
-const server = app.listen(config.PORT);
+const server = app.listen(PORT);
 
 // Immediately invoked async function
 (async () => {
@@ -19,8 +19,8 @@ const server = app.listen(config.PORT);
 
     logger.info('APPLICATION_STARTED', {
       meta: {
-        PORT: config.PORT,
-        SERVER_URL: config.SERVER_URL,
+        PORT: PORT,
+        SERVER_URL: SERVER_URL,
       },
     });
   } catch (err) {

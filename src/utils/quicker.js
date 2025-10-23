@@ -1,5 +1,5 @@
 import os from 'os';
-import config from '#config/index.js';
+import {ENV} from '#config/index.js';
 
 export default {
   getSystemHealth() {
@@ -11,7 +11,7 @@ export default {
   },
   getApplicationHealth() {
     return {
-      environment: config.ENV,
+      environment: ENV,
       uptime: `${process.uptime().toFixed(2)} Seconds`,
       memoryUsage: {
         heapTotal: `${(process.memoryUsage().heapTotal / 1024 / 1024).toFixed(2)} MB`,
