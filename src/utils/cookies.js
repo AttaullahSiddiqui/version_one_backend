@@ -1,4 +1,4 @@
-export const cookies = {
+const cookies = {
   getOptions: () => ({
     httpOnly: true,
     secure: process.env.ENV === 'production',
@@ -15,3 +15,5 @@ export const cookies = {
     return req.cookies[name];
   },
 };
+
+export default cookies;

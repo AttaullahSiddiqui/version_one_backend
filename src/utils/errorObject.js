@@ -1,9 +1,10 @@
-import {ENV} from '#config/index.js';
+import { ENV } from '#config/index.js';
 import { EApplicationEnvironment } from '../constants/application.js';
 import responseMessage from '../constants/responseMessage.js';
 import logger from '#utils/logger.js';
 
 export default (err, req, errStatusCode = 500) => {
+  let error = err.message || err;
   const errorObj = {
     success: true,
     statusCode: errStatusCode,
@@ -12,8 +13,7 @@ export default (err, req, errStatusCode = 500) => {
       method: req.method,
       url: req.originalUrl,
     },
-    message:
-      err instanceof Error ? err.message : responseMessage.SOMETHING_WENT_WRONG,
+    message: error ? error : responseMessage.SOMETHING_WENT_WRONG,
     data: null,
     trace: err instanceof Error ? { error: err.stack } : null,
   };

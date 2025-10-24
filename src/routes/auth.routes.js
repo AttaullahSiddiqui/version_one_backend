@@ -14,6 +14,7 @@ router.use(protect);
 router.get('/me', authController.getMe);
 router.put('/update-password', authController.updatePassword);
 router.put('/update-details', authController.updateDetails);
+router.post('/logout', authController.logout);
 
 // Admin only routes
 router.use(restrictTo('admin'));

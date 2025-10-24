@@ -10,6 +10,7 @@ import compression from 'compression';
 import systemRoutes from '#routes/system.routes.js';
 import authRoutes from '#routes/auth.routes.js';
 import blogRoutes from '#routes/blog.routes.js';
+import nameRoutes from '#routes/name.routes.js';
 import { corsHandler } from '#utils/corsHandler.js';
 import globalErrorHandler from '#middleware/globalErrorHandler.js';
 import { routeNotFound } from '#utils/routeNotFound.js';
@@ -33,6 +34,7 @@ app.get('/', (req, res) => {
 app.use('/system', systemRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/blogs', blogRoutes);
+app.use('/api/names', nameRoutes);
 
 app.use(routeNotFound);
 

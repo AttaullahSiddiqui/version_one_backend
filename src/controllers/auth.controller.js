@@ -2,6 +2,7 @@ import User from '../models/user.model.js';
 import httpError from '#utils/httpError.js';
 import httpResponse from '#utils/httpResponse.js';
 import sendEmail from '#utils/email.js';
+import cookies from '#utils/cookies.js';
 import {
   generateResetToken,
   generateTokenExpiry,
@@ -30,6 +31,7 @@ export default {
       await user.save({ validateBeforeSave: false });
 
       const token = user.generateAuthToken();
+      cookies.set(res, 'token', token);
       const sanitizedUser = sanitizeUserData(user);
 
       httpResponse(req, res, 200, 'Login successful', {
@@ -37,13 +39,18 @@ export default {
         token,
       });
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
   createAdmin: async (req, res, next) => {
     try {
       const { name, email, password } = req.body;
+
+      if (!name || !email || !password) {
+        httpError(next, 'Please provide all required fields', req, 400);
+        return;
+      }
 
       const existingAdmin = await User.findOne({ email });
       if (existingAdmin) {
@@ -54,13 +61,13 @@ export default {
       const admin = await User.create({ name, email, password, role: 'admin' });
       const sanitizedAdmin = sanitizeUserData(admin);
       const token = admin.generateAuthToken();
+      cookies.set(res, 'token', token);
 
       httpResponse(req, res, 201, 'Admin created successfully', {
         admin: sanitizedAdmin,
-        token,
       });
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -75,7 +82,7 @@ export default {
 
       httpResponse(req, res, 200, 'User details retrieved', user);
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -85,6 +92,11 @@ export default {
 
       if (!currentPassword || !newPassword) {
         httpError(next, 'Please provide both passwords', req, 400);
+        return;
+      }
+
+      if (currentPassword == newPassword) {
+        httpError(next, 'Please choose different password', req, 400);
         return;
       }
 
@@ -104,10 +116,11 @@ export default {
       await user.save();
 
       const token = user.generateAuthToken();
+      cookies.set(res, 'token', token);
 
-      httpResponse(req, res, 200, 'Password updated successfully', { token });
+      httpResponse(req, res, 200, 'Password updated successfully');
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -133,7 +146,7 @@ export default {
 
       httpResponse(req, res, 200, 'User details updated', user);
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -174,7 +187,7 @@ export default {
         httpError(next, 'Email could not be sent', req, 500);
       }
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -206,10 +219,11 @@ export default {
       await user.save();
 
       const token = user.generateAuthToken();
+      cookies.set(res, 'token', token);
 
-      httpResponse(req, res, 200, 'Password reset successful', { token });
+      httpResponse(req, res, 200, 'Password reset successful');
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -221,7 +235,7 @@ export default {
 
       httpResponse(req, res, 200, 'Admins retrieved successfully', admins);
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
     }
   },
 
@@ -246,7 +260,15 @@ export default {
 
       httpResponse(req, res, 200, 'Admin deleted successfully');
     } catch (error) {
-      httpError(next, error.message, req, 500);
+      httpError(next, error, req, 500);
+    }
+  },
+  logout: async (req, res, next) => {
+    try {
+      cookies.clear(res, 'token');
+      httpResponse(req, res, 200, 'Logged out successfully');
+    } catch (error) {
+      httpError(next, error, req, 500);
     }
   },
 };

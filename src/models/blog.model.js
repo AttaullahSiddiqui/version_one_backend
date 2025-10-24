@@ -84,24 +84,88 @@ const blogSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: { virtuals: true },
   }
 );
 
-// Create slug before saving
+// Virtual fields
+blogSchema.virtual('formattedDate').get(function () {
+  return this.createdAt.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+});
+
+// Document middleware
 blogSchema.pre('save', function (next) {
+  // Generate slug
   this.slug = slugify(this.title, {
     lower: true,
     strict: true,
     remove: /[*+~.()'"!:@]/g,
   });
+
+  // Calculate read time
+  const wordsPerMinute = 200;
+  const wordCount = this.content.trim().split(/\s+/).length;
+  this.readTime = Math.ceil(wordCount / wordsPerMinute);
+
   next();
 });
 
-// Add indexes for better query performance
-blogSchema.index({ slug: 1 });
-blogSchema.index({ category: 1 });
-blogSchema.index({ tags: 1 });
-blogSchema.index({ title: 'text', content: 'text' });
+// Instance methods
+blogSchema.methods.isPublished = function () {
+  return this.status === 'published';
+};
+
+// Static methods
+blogSchema.statics.findSimilar = function (blogId, limit = 3) {
+  return this.find({
+    _id: { $ne: blogId },
+    status: 'published',
+  })
+    .where('tags')
+    .in(this.tags)
+    .limit(limit)
+    .select('title slug excerpt featuredImage')
+    .populate('author', 'name avatar');
+};
+
+// Indexes
+blogSchema.index({ slug: 1 }, { unique: true, background: true });
+
+blogSchema.index(
+  {
+    status: 1,
+    createdAt: -1,
+    category: 1,
+  },
+  { background: true }
+);
+
+blogSchema.index(
+  {
+    title: 'text',
+    content: 'text',
+    tags: 'text',
+  },
+  {
+    background: true,
+    weights: {
+      title: 3,
+      content: 2,
+      tags: 1,
+    },
+  }
+);
 
 const Blog = mongoose.model('Blog', blogSchema);
 

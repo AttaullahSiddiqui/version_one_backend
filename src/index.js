@@ -1,5 +1,5 @@
 import app from './app.js';
-import {PORT,SERVER_URL} from '#config/index.js';
+import { PORT, SERVER_URL } from '#config/index.js';
 import logger from '#utils/logger.js';
 import databaseService from '#config/database.js';
 

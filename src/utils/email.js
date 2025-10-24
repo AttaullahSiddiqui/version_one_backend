@@ -2,48 +2,48 @@ import nodemailer from 'nodemailer';
 import { ENV } from '#config/index.js';
 
 class EmailService {
-    constructor() {
-        this.transporter = nodemailer.createTransport({
-            host: ENV.SMTP_HOST,
-            port: ENV.SMTP_PORT,
-            secure: ENV.SMTP_SECURE === 'true',
-            auth: {
-                user: ENV.SMTP_USER,
-                pass: ENV.SMTP_PASSWORD
-            }
-        });
+  constructor() {
+    this.transporter = nodemailer.createTransport({
+      host: ENV.SMTP_HOST,
+      port: ENV.SMTP_PORT,
+      secure: ENV.SMTP_SECURE === 'true',
+      auth: {
+        user: ENV.SMTP_USER,
+        pass: ENV.SMTP_PASSWORD,
+      },
+    });
+  }
+
+  async sendEmail({ to, subject, templateName, templateData }) {
+    try {
+      const html = this.getEmailTemplate(templateName, templateData);
+
+      const mailOptions = {
+        from: `${ENV.APP_NAME} <${ENV.SMTP_FROM_EMAIL}>`,
+        to,
+        subject,
+        html,
+      };
+
+      await this.transporter.sendMail(mailOptions);
+      return true;
+    } catch (error) {
+      console.error('Email send error:', error);
+      throw new Error('Email could not be sent');
     }
+  }
 
-    async sendEmail({ to, subject, templateName, templateData }) {
-        try {
-            const html = this.getEmailTemplate(templateName, templateData);
+  getEmailTemplate(templateName, data) {
+    const templates = {
+      welcome: this.getWelcomeTemplate(data),
+      notification: this.getNotificationTemplate(data),
+    };
 
-            const mailOptions = {
-                from: `${ENV.APP_NAME} <${ENV.SMTP_FROM_EMAIL}>`,
-                to,
-                subject,
-                html
-            };
+    return templates[templateName] || this.getDefaultTemplate(data);
+  }
 
-            await this.transporter.sendMail(mailOptions);
-            return true;
-        } catch (error) {
-            console.error('Email send error:', error);
-            throw new Error('Email could not be sent');
-        }
-    }
-
-    getEmailTemplate(templateName, data) {
-        const templates = {
-            welcome: this.getWelcomeTemplate(data),
-            notification: this.getNotificationTemplate(data)
-        };
-
-        return templates[templateName] || this.getDefaultTemplate(data);
-    }
-
-    getDefaultTemplate(data) {
-        return `
+  getDefaultTemplate(data) {
+    return `
         <!DOCTYPE html>
         <html>
         <head>
@@ -130,27 +130,35 @@ class EmailService {
                     <div class="message">
                         ${data.message}
                     </div>
-                    ${data.actionUrl ? `
+                    ${
+                      data.actionUrl
+                        ? `
                     <a href="${data.actionUrl}" class="cta-button">
                         ${data.actionText || 'Click Here'}
                     </a>
-                    ` : ''}
+                    `
+                        : ''
+                    }
                 </div>
                 <div class="footer">
                     <p>&copy; ${new Date().getFullYear()} ${ENV.APP_NAME}. All rights reserved.</p>
-                    ${data.showSocial ? `
+                    ${
+                      data.showSocial
+                        ? `
                     <div class="social-links">
                         <a href="${ENV.SOCIAL_FACEBOOK || '#'}">Facebook</a>
                         <a href="${ENV.SOCIAL_TWITTER || '#'}">Twitter</a>
                         <a href="${ENV.SOCIAL_INSTAGRAM || '#'}">Instagram</a>
                     </div>
-                    ` : ''}
+                    `
+                        : ''
+                    }
                 </div>
             </div>
         </body>
         </html>
         `;
-    }
+  }
 }
 
 const emailService = new EmailService();

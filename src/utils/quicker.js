@@ -1,5 +1,5 @@
 import os from 'os';
-import {ENV} from '#config/index.js';
+import { ENV } from '#config/index.js';
 
 export default {
   getSystemHealth() {
