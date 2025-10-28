@@ -9,6 +9,8 @@ import {
   isTokenExpired,
   sanitizeUserData,
 } from '#utils/crypto.js';
+import cloudinary from '#services/cloudinary.service.js';
+import { cleanupTemp } from '#middleware/multer.middleware.js';
 
 export default {
   login: async (req, res, next) => {
@@ -31,7 +33,7 @@ export default {
       await user.save({ validateBeforeSave: false });
 
       const token = user.generateAuthToken();
-      cookies.set(res, 'token', token);
+
       const sanitizedUser = sanitizeUserData(user);
 
       httpResponse(req, res, 200, 'Login successful', {
@@ -45,28 +47,52 @@ export default {
 
   createAdmin: async (req, res, next) => {
     try {
-      const { name, email, password } = req.body;
+      const { name, email, password, role } = req.body;
 
-      if (!name || !email || !password) {
+      if (!name || !email || !password || !role) {
+        await cleanupTemp(req.file); // Clean up if validation fails
         httpError(next, 'Please provide all required fields', req, 400);
         return;
       }
 
       const existingAdmin = await User.findOne({ email });
       if (existingAdmin) {
+        await cleanupTemp(req.file);
         httpError(next, 'Email already registered', req, 400);
         return;
       }
 
-      const admin = await User.create({ name, email, password, role: 'admin' });
+      let avatarData = {
+        public_id: 'default_avatar_id',
+        url: 'https://your-default-avatar-url.com/default.png',
+      };
+
+      if (req.file) {
+        try {
+          avatarData = await cloudinary.upload(req.file, 'websiteavatars');
+        } catch (error) {
+          httpError(next, 'Avatar upload failed', req, 400);
+          return;
+        } finally {
+          await cleanupTemp(req.file);
+        }
+      }
+
+      const admin = await User.create({
+        name,
+        email,
+        password,
+        role: role || 'admin',
+        avatar: avatarData,
+      });
+
       const sanitizedAdmin = sanitizeUserData(admin);
-      const token = admin.generateAuthToken();
-      cookies.set(res, 'token', token);
 
       httpResponse(req, res, 201, 'Admin created successfully', {
         admin: sanitizedAdmin,
       });
     } catch (error) {
+      await cleanupTemp(req.file);
       httpError(next, error, req, 500);
     }
   },

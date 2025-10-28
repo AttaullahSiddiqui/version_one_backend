@@ -6,7 +6,7 @@ import logger from '#utils/logger.js';
 export default (err, req, errStatusCode = 500) => {
   let error = err.message || err;
   const errorObj = {
-    success: true,
+    success: false,
     statusCode: errStatusCode,
     request: {
       ip: req.ip || null,

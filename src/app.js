@@ -1,3 +1,5 @@
+/* This code snippet is setting up an Express.js server with various middleware and routes. Here's a
+breakdown of what each part is doing: */
 import express from 'express';
 import helmet from 'helmet';
 import path from 'path';

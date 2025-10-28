@@ -1,5 +1,6 @@
 import logger from '#utils/logger.js';
 import jwtToken from '#utils/jwt.js';
+import { cleanupTemp } from './multer.middleware.js';
 
 export const protect = (req, res, next) => {
   try {
@@ -34,20 +35,14 @@ export const protect = (req, res, next) => {
   }
 };
 
-export const restrictTo = (...roles) => {
-  return (req, res, next) => {
+export const validatePassKey = key => {
+  return async (req, res, next) => {
     try {
-      if (!req.user) {
-        return res.status(401).json({
-          error: 'Authentication required',
-          message: 'User not authenticated',
-        });
-      }
-
-      if (!roles.includes(req.user.role)) {
+      if (key.trim() !== req.body.passKey.trim()) {
         logger.warn(
-          `Access denied for user ${req.user.email} with role ${req.user.role}. Required: ${roles.join(', ')}`
+          `Wrong passkey provided for creating admin: ${req.body.passKey}`
         );
+        if (req.file) await cleanupTemp(req.file);
         return res.status(403).json({
           error: 'Access denied',
           message: 'Insufficient permissions',

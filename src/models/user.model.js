@@ -32,6 +32,16 @@ const userSchema = new mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'admin',
     },
+    avatar: {
+      public_id: {
+        type: String,
+        default: 'default_avatar_id', // Set your default avatar ID
+      },
+      url: {
+        type: String,
+        default: 'https://your-default-avatar-url.com/default.png',
+      },
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     lastLogin: Date,
@@ -53,11 +63,22 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Generate JWT token
 userSchema.methods.generateAuthToken = function () {
-  return jwt.sign({ id: this._id, role: this.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
-  });
+  try {
+    const token = jwt.sign(
+      {
+        id: this._id,
+        role: this.role,
+        email: this.email,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    return token;
+  } catch (error) {
+    throw new Error(`Token generation failed: ${error.message}`);
+  }
 };
 
 const User = mongoose.model('User', userSchema);
