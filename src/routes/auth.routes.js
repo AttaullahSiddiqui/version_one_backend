@@ -17,7 +17,7 @@ router.delete('/delete-admin/:id', authController.deleteAdmin);
 // router.use(protect);
 router.get('/me', protect, authController.getMe);
 router.put('/update-password', protect, authController.updatePassword);
-router.put('/update-details', protect, authController.updateDetails);
+router.put('/update-admin', protect, authController.updateAdmin);
 router.post('/logout', protect, authController.logout);
 
 router.post('/upload-image', upload.single('image'), (req, res) => {

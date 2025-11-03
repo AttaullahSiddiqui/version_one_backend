@@ -4,14 +4,14 @@ import { cleanupTemp } from './multer.middleware.js';
 
 export const protect = (req, res, next) => {
   try {
-    const token = req.cookies.token;
-
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         error: 'Authentication required',
         message: 'No access token provided',
       });
     }
+    const token = authHeader.split(' ')[1];
 
     const decoded = jwtToken.verify(token);
     req.user = decoded;

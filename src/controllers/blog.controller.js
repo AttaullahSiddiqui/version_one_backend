@@ -157,43 +157,190 @@ export default {
 
   createBlog: async (req, res, next) => {
     try {
-      const { title, content, category, tags } = req.body;
+      console.log(req.file);
+      console.log(req.body);
+      // if (req.file) await cleanupTemp(req.file);
+      return;
 
-      if (!title || !content || !category) {
+      const {
+        title,
+        excerpt,
+        content,
+        category,
+        tags,
+        metaDescription,
+        authorId,
+        status = 'draft',
+      } = req.body;
+
+      // Validate required fields
+      if (
+        !title ||
+        !excerpt ||
+        !content ||
+        !category ||
+        !metaDescription ||
+        !authorId
+      ) {
+        if (req.file) await cleanupTemp(req.file);
         httpError(next, 'Please provide all required fields', req, 400);
         return;
       }
 
-      const blog = new Blog({
-        ...req.body,
-        author: req.user._id,
-        status: req.body.status || 'draft',
+      let featuredImage = {
+        url: 'https://your-default-blog-image.com/default.jpg',
+        alt: 'Default blog image',
+      };
+
+      // Handle featured image upload
+      if (req.file) {
+        try {
+          const result = await cloudinary.upload(req.file.path, {
+            folder: 'blogs/featured',
+            width: 1200,
+            height: 630,
+            crop: 'fill',
+            quality: 'auto',
+            // Add these options for better optimization
+            fetch_format: 'auto',
+            loading: 'lazy',
+            responsive: true,
+          });
+
+          featuredImage = {
+            url: result.secure_url,
+            alt: req.body.featuredImageAlt || title, // Use provided alt text or fallback to title
+          };
+
+          await cleanupTemp(req.file);
+        } catch (error) {
+          await cleanupTemp(req.file);
+          httpError(next, 'Error uploading featured image', req, 500);
+          return;
+        }
+      }
+
+      // Create blog post
+      const blog = await Blog.create({
+        title,
+        excerpt,
+        content,
+        category,
+        tags: Array.isArray(tags) ? tags : [],
+        author: authorId,
+        featuredImage,
+        status,
+        metaDescription,
       });
 
-      const savedBlog = await blog.save();
-      await savedBlog.populate('author', 'name avatar');
+      // Populate author details for response
+      await blog.populate('author', 'name avatar');
 
-      httpResponse(req, res, 201, 'Blog created successfully', savedBlog);
+      httpResponse(req, res, 201, 'Blog created successfully', {
+        blog,
+      });
     } catch (error) {
-      httpError(next, error, req, 400);
+      if (req.file) await cleanupTemp(req.file);
+      httpError(next, error, req, 500);
     }
   },
 
   updateBlog: async (req, res, next) => {
     try {
-      if (!req.params.id) {
+      const { id } = req.params;
+      const {
+        title,
+        excerpt,
+        content,
+        category,
+        tags,
+        metaDescription,
+        status,
+        featuredImageAlt,
+      } = req.body;
+
+      if (!id) {
+        if (req.file) await cleanupTemp(req.file);
         httpError(next, 'Blog ID is required', req, 400);
         return;
       }
 
-      const blog = await Blog.findOneAndUpdate(
+      const existingBlog = await Blog.findOne({
+        _id: id,
+        author: req.user._id,
+      });
+
+      if (!existingBlog) {
+        if (req.file) await cleanupTemp(req.file);
+        httpError(next, 'Blog not found or unauthorized', req, 404);
+        return;
+      }
+
+      const updateData = {
+        title,
+        excerpt,
+        content,
+        category,
+        tags: Array.isArray(tags) ? tags : existingBlog.tags,
+        metaDescription,
+        status,
+        updatedAt: Date.now(),
+      };
+
+      if (req.file) {
+        try {
+          const result = await cloudinary.upload(req.file.path, {
+            folder: 'blogs/featured',
+            width: 1200,
+            height: 630,
+            crop: 'fill',
+            quality: 'auto',
+            // Add these options for better optimization
+            fetch_format: 'auto',
+            loading: 'lazy',
+            responsive: true,
+          });
+
+          // Delete old image from cloudinary if it exists and isn't default
+          if (
+            existingBlog.featuredImage?.url &&
+            !existingBlog.featuredImage.url.includes('default-blog-image')
+          ) {
+            const publicId = existingBlog.featuredImage.url
+              .split('/')
+              .pop()
+              .split('.')[0];
+            await cloudinary.destroy(publicId);
+          }
+
+          // Update featured image data
+          updateData.featuredImage = {
+            url: result.secure_url,
+            alt: featuredImageAlt || title,
+          };
+
+          await cleanupTemp(req.file);
+        } catch (error) {
+          await cleanupTemp(req.file);
+          httpError(next, 'Error uploading featured image', req, 500);
+          return;
+        }
+      } else if (featuredImageAlt && existingBlog.featuredImage) {
+        // Update only alt text if provided without new image
+        updateData.featuredImage = {
+          ...existingBlog.featuredImage,
+          alt: featuredImageAlt,
+        };
+      }
+
+      // Update blog with new data
+      const updatedBlog = await Blog.findOneAndUpdate(
         {
-          _id: req.params.id,
+          _id: id,
           author: req.user._id,
         },
         {
-          $set: req.body,
-          updatedAt: Date.now(),
+          $set: updateData,
         },
         {
           new: true,
@@ -201,14 +348,17 @@ export default {
         }
       ).populate('author', 'name avatar');
 
-      if (!blog) {
-        httpError(next, 'Blog not found or unauthorized', req, 404);
+      if (!updatedBlog) {
+        httpError(next, 'Failed to update blog', req, 400);
         return;
       }
 
-      httpResponse(req, res, 200, 'Blog updated successfully', blog);
+      httpResponse(req, res, 200, 'Blog updated successfully', {
+        blog: updatedBlog,
+      });
     } catch (error) {
-      httpError(next, error, req, 400);
+      if (req.file) await cleanupTemp(req.file);
+      httpError(next, error, req, 500);
     }
   },
 

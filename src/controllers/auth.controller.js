@@ -11,6 +11,7 @@ import {
 } from '#utils/crypto.js';
 import cloudinary from '#services/cloudinary.service.js';
 import { cleanupTemp } from '#middleware/multer.middleware.js';
+import { hashToken, compareTokens } from '#utils/crypto.js';
 
 export default {
   login: async (req, res, next) => {
@@ -150,27 +151,54 @@ export default {
     }
   },
 
-  updateDetails: async (req, res, next) => {
+  updateAdmin: async (req, res, next) => {
     try {
-      const { name, email } = req.body;
-      const fieldsToUpdate = { ...(name && { name }), ...(email && { email }) };
+      const { name, password, currentPassword, id, email } = req.body;
+      let fieldsToUpdate = {};
 
-      if (Object.keys(fieldsToUpdate).length === 0) {
+      console.log(req.body);
+
+      if (name) fieldsToUpdate.name = name;
+      if (email) fieldsToUpdate.email = email;
+
+      if (Object.keys(fieldsToUpdate).length === 0 && !password) {
         httpError(next, 'Please provide fields to update', req, 400);
         return;
       }
 
-      const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
+      const admin = await User.findById(id).select('+password');
+
+      if (!admin) {
+        httpError(next, 'Admin not found', req, 404);
+        return;
+      }
+
+      if (password) {
+        if (!currentPassword) {
+          httpError(next, 'Please provide current password', req, 400);
+          return;
+        }
+
+        if (!(await admin.comparePassword(currentPassword))) {
+          httpError(next, 'Current password is incorrect', req, 401);
+          return;
+        }
+
+        fieldsToUpdate.password = password;
+      }
+
+      const updatedAdmin = await User.findByIdAndUpdate(id, fieldsToUpdate, {
         new: true,
         runValidators: true,
       });
 
-      if (!user) {
-        httpError(next, 'User not found', req, 404);
-        return;
-      }
+      console.log('UPDATEDDDD ', updatedAdmin);
 
-      httpResponse(req, res, 200, 'User details updated', user);
+      const sanitizedAdmin = sanitizeUserData(updatedAdmin);
+
+      httpResponse(req, res, 200, 'Admin details updated successfully', {
+        admin: sanitizedAdmin,
+      });
     } catch (error) {
       httpError(next, error, req, 500);
     }
@@ -219,8 +247,9 @@ export default {
 
   resetPassword: async (req, res, next) => {
     try {
+      const hashedToken = hashToken(req.params.token);
       const user = await User.findOne({
-        resetPasswordToken: req.params.token,
+        resetPasswordToken: hashedToken,
         resetPasswordExpire: { $gt: Date.now() },
       });
 
@@ -267,8 +296,10 @@ export default {
 
   deleteAdmin: async (req, res, next) => {
     try {
+      const { id } = req.params;
+
       const admin = await User.findOne({
-        _id: req.params.id,
+        _id: id,
         role: 'admin',
       });
 
@@ -280,6 +311,10 @@ export default {
       if (admin._id.toString() === req.user.id) {
         httpError(next, 'You cannot delete your own account', req, 400);
         return;
+      }
+
+      if (admin.avatar && admin.avatar.public_id !== 'default_avatar_id') {
+        await cloudinary.destroy(admin.avatar.public_id);
       }
 
       await admin.deleteOne();
