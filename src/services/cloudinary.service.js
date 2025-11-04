@@ -8,35 +8,67 @@ cloudinary.config({
 });
 
 export default {
-  async upload(file, folder = 'website/avatars') {
+  async upload(file, options = {}) {
+    if (!file) throw new Error('No file provided to upload');
+
+    let fileSource;
+    if (typeof file === 'string') {
+      fileSource = file;
+    } else if (file.path) {
+      fileSource = file.path;
+    } else if (file.buffer) {
+      const mime = file.mimetype || 'application/octet-stream';
+      const base64 = file.buffer.toString('base64');
+      fileSource = `data:${mime};base64,${base64}`;
+    } else {
+      throw new Error('Unsupported file object provided to Cloudinary upload');
+    }
+
+    const {
+      folder,
+      width,
+      height,
+      crop,
+      quality,
+      fetch_format,
+      transformation,
+      ...rest
+    } = options;
+
+    const uploadOptions = { ...rest };
+    if (folder) uploadOptions.folder = folder;
+    if (fetch_format) uploadOptions.fetch_format = fetch_format;
+
+    if (transformation) {
+      uploadOptions.transformation = transformation;
+    } else {
+      const transform = {};
+      if (width) transform.width = width;
+      if (height) transform.height = height;
+      if (crop) transform.crop = crop;
+      if (quality) transform.quality = quality;
+      if (Object.keys(transform).length) {
+        uploadOptions.transformation = transform;
+      }
+    }
+
     try {
-      if (!file) throw new Error('No file provided');
-
-      const result = await cloudinary.uploader.upload(file.path, {
-        folder,
-        resource_type: 'auto',
-        allowed_formats: ['jpg', 'png', 'jpeg', 'gif', 'webp'],
-        transformation: [
-          { width: 400, height: 400, crop: 'fill', quality: 'auto' },
-        ],
-      });
-
-      return {
-        public_id: result.public_id,
-        url: result.secure_url,
-      };
-    } catch (error) {
-      logger.error('Cloudinary upload error:', error);
-      throw new Error('Image upload failed');
+      const result = await cloudinary.uploader.upload(
+        fileSource,
+        uploadOptions
+      );
+      return result;
+    } catch (err) {
+      throw err;
     }
   },
   async delete(public_id) {
+    if (!public_id) throw new Error('publicId is required to destroy an asset');
     try {
-      if (!public_id) return;
-      await cloudinary.uploader.destroy(public_id);
-    } catch (error) {
-      logger.error('Cloudinary delete error:', error);
-      throw new Error('Image deletion failed');
+      const result = await cloudinary.uploader.destroy(public_id, options);
+      return result;
+    } catch (err) {
+      throw err;
     }
   },
   async update(file, oldPublicId, folder = 'avatars') {

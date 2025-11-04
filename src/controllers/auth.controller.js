@@ -70,7 +70,7 @@ export default {
 
       if (req.file) {
         try {
-          avatarData = await cloudinary.upload(req.file, 'websiteavatars');
+          avatarData = await cloudinary.upload(req.file, 'website/avatars');
         } catch (error) {
           httpError(next, 'Avatar upload failed', req, 400);
           return;

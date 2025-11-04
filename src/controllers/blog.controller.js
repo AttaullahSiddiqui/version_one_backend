@@ -1,6 +1,8 @@
 import Blog from '../models/blog.model.js';
 import httpError from '#utils/httpError.js';
 import httpResponse from '#utils/httpResponse.js';
+import cloudinary from '#services/cloudinary.service.js';
+import { cleanupTemp } from '#middleware/multer.middleware.js';
 
 export default {
   getAllBlogs: async (req, res, next) => {
@@ -156,29 +158,32 @@ export default {
   },
 
   createBlog: async (req, res, next) => {
-    try {
-      console.log(req.file);
-      console.log(req.body);
-      // if (req.file) await cleanupTemp(req.file);
-      return;
+    console.log(req.body.tags);
+    console.log(Array.isArray(req.body.tags));
+    console.log(JSON.parse(req.body.tags));
+    console.log(typeof req.body.tags);
+    console.log(typeof JSON.parse(req.body.tags));
 
+    try {
       const {
         title,
         excerpt,
         content,
         category,
         tags,
+        metaTitle,
         metaDescription,
         authorId,
         status = 'draft',
       } = req.body;
 
-      // Validate required fields
+      // validate required fields including metaTitle
       if (
         !title ||
         !excerpt ||
         !content ||
         !category ||
+        !metaTitle ||
         !metaDescription ||
         !authorId
       ) {
@@ -192,10 +197,9 @@ export default {
         alt: 'Default blog image',
       };
 
-      // Handle featured image upload
       if (req.file) {
         try {
-          const result = await cloudinary.upload(req.file.path, {
+          const result = await cloudinary.upload(req.file, {
             folder: 'blogs/featured',
             width: 1200,
             height: 630,
@@ -209,32 +213,30 @@ export default {
 
           featuredImage = {
             url: result.secure_url,
-            alt: req.body.featuredImageAlt || title, // Use provided alt text or fallback to title
+            alt: req.body.featuredImageAlt || title,
           };
 
           await cleanupTemp(req.file);
         } catch (error) {
           await cleanupTemp(req.file);
+          console.error('Cloudinary upload error:', error);
           httpError(next, 'Error uploading featured image', req, 500);
           return;
         }
       }
 
-      // Create blog post
       const blog = await Blog.create({
         title,
         excerpt,
         content,
         category,
-        tags: Array.isArray(tags) ? tags : [],
+        tags: Array.isArray(JSON.parse(tags)) ? JSON.parse(tags) : [],
         author: authorId,
         featuredImage,
         status,
+        metaTitle,
         metaDescription,
       });
-
-      // Populate author details for response
-      await blog.populate('author', 'name avatar');
 
       httpResponse(req, res, 201, 'Blog created successfully', {
         blog,
@@ -254,6 +256,7 @@ export default {
         content,
         category,
         tags,
+        metaTitle,
         metaDescription,
         status,
         featuredImageAlt,
@@ -277,46 +280,52 @@ export default {
       }
 
       const updateData = {
-        title,
-        excerpt,
-        content,
-        category,
+        // only set fields that are provided; keep others unchanged
+        ...(title !== undefined && { title }),
+        ...(excerpt !== undefined && { excerpt }),
+        ...(content !== undefined && { content }),
+        ...(category !== undefined && { category }),
         tags: Array.isArray(tags) ? tags : existingBlog.tags,
-        metaDescription,
-        status,
+        ...(metaTitle !== undefined && { metaTitle }),
+        ...(metaDescription !== undefined && { metaDescription }),
+        ...(status !== undefined && { status }),
         updatedAt: Date.now(),
       };
 
       if (req.file) {
         try {
-          const result = await cloudinary.upload(req.file.path, {
+          const result = await cloudinary.upload(req.file, {
             folder: 'blogs/featured',
             width: 1200,
             height: 630,
             crop: 'fill',
             quality: 'auto',
-            // Add these options for better optimization
             fetch_format: 'auto',
             loading: 'lazy',
             responsive: true,
           });
 
-          // Delete old image from cloudinary if it exists and isn't default
-          if (
-            existingBlog.featuredImage?.url &&
-            !existingBlog.featuredImage.url.includes('default-blog-image')
-          ) {
-            const publicId = existingBlog.featuredImage.url
-              .split('/')
-              .pop()
-              .split('.')[0];
-            await cloudinary.destroy(publicId);
+          // Prefer stored public_id if available, fallback to URL parsing
+          const oldPublicId =
+            existingBlog.featuredImage?.public_id ||
+            (existingBlog.featuredImage?.url
+              ? existingBlog.featuredImage.url.split('/').pop().split('.')[0]
+              : null);
+
+          if (oldPublicId) {
+            try {
+              await cloudinary.delete(oldPublicId);
+            } catch (err) {
+              // log but don't fail the whole request for a delete error
+              console.warn('Failed to delete old image from Cloudinary', err);
+            }
           }
 
           // Update featured image data
           updateData.featuredImage = {
             url: result.secure_url,
-            alt: featuredImageAlt || title,
+            alt: featuredImageAlt || title || existingBlog.featuredImage?.alt,
+            public_id: result.public_id || null,
           };
 
           await cleanupTemp(req.file);

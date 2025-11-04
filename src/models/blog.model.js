@@ -68,10 +68,17 @@ const blogSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    metaTitle: {
+      type: String,
+      required: [true, 'Meta title is required'],
+      maxLength: [60, 'Meta title cannot exceed 60 characters'],
+      trim: true,
+    },
     metaDescription: {
       type: String,
       required: true,
       maxLength: [160, 'Meta description cannot exceed 160 characters'],
+      trim: true,
     },
     views: {
       type: Number,
@@ -104,6 +111,17 @@ blogSchema.virtual('formattedDate').get(function () {
   });
 });
 
+const stripHtml = html => {
+  if (!html) return '';
+  // If content is an object (editor delta), stringify it first
+  const str = typeof html === 'string' ? html : JSON.stringify(html);
+  // Remove tags and collapse whitespace
+  return str
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 // Document middleware
 blogSchema.pre('save', function (next) {
   // Generate slug
@@ -113,12 +131,22 @@ blogSchema.pre('save', function (next) {
     remove: /[*+~.()'"!:@]/g,
   });
 
-  // Calculate read time
-  const wordsPerMinute = 200;
-  const wordCount = this.content.trim().split(/\s+/).length;
-  this.readTime = Math.ceil(wordCount / wordsPerMinute);
-
   next();
+});
+
+blogSchema.pre('validate', function (next) {
+  try {
+    // Ensure content is treated as string (handles editor objects)
+    const contentStr = stripHtml(this.content);
+    const words = contentStr ? contentStr.split(/\s+/).length : 0;
+    const wordsPerMinute = 200;
+
+    this.readTime =
+      words > 0 ? Math.max(1, Math.ceil(words / wordsPerMinute)) : 0;
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Instance methods
