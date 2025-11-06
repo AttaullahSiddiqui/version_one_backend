@@ -10,7 +10,7 @@ export default {
       const { page = 1, limit = 10, status = 'published' } = req.query;
       const skip = (Number(page) - 1) * Number(limit);
 
-      const query = { status };
+      const query = status !== 'all' ? { status } : {};
       const blogs = await Blog.find(query)
         .populate('author', 'name avatar')
         .select('-content') // Don't send full content in listing
@@ -390,6 +390,23 @@ export default {
 
       await blog.deleteOne();
       httpResponse(req, res, 200, 'Blog deleted successfully');
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+  getBlogCounts: async (req, res, next) => {
+    try {
+      const [totalBlogs, publishedBlogs, draftBlogs] = await Promise.all([
+        Blog.countDocuments({}),
+        Blog.countDocuments({ status: 'published' }),
+        Blog.countDocuments({ status: 'draft' }),
+      ]);
+
+      httpResponse(req, res, 200, 'Blog counts retrieved successfully', {
+        total: totalBlogs,
+        published: publishedBlogs,
+        drafts: draftBlogs,
+      });
     } catch (error) {
       httpError(next, error, req, 500);
     }

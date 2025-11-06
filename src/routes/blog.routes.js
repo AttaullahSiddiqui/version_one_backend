@@ -5,7 +5,8 @@ import { protect, validatePassKey } from '#middleware/auth.middleware.js';
 
 const router = Router();
 
-router.get('/all', blogController.getAllBlogs);
+router.get('/', blogController.getAllBlogs);
+router.get('/count', blogController.getBlogCounts);
 router.get('/:slug', blogController.getBlogBySlug);
 router.get('/category/:category', blogController.getBlogsByCategory);
 router.get('/search/:query', blogController.searchBlogs);
