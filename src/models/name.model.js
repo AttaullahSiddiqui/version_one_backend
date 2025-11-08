@@ -25,16 +25,26 @@ const nameSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    religion: [
-      {
-        type: String,
+    religion: {
+      type: [{ type: String }],
+      default: undefined,
+      validate: {
+        validator: function (arr) {
+          return arr === undefined || (Array.isArray(arr) && arr.length <= 10);
+        },
+        message: 'Religion array cannot have more than 10 items',
       },
-    ],
-    regions: [
-      {
-        type: String,
+    },
+    regions: {
+      type: [{ type: String }],
+      default: undefined,
+      validate: {
+        validator: function (arr) {
+          return arr === undefined || (Array.isArray(arr) && arr.length <= 10);
+        },
+        message: 'Regions array cannot have more than 10 items',
       },
-    ],
+    },
     popularity: {
       score: {
         type: Number,
@@ -168,29 +178,40 @@ function calculateNumerology(name) {
   };
 }
 
-// Document middleware
 nameSchema.pre('save', function (next) {
-  this.metadata = {
-    length: this.name.length,
-    firstLetter: this.name.charAt(0).toLowerCase(),
-    lastLetter: this.name.charAt(this.name.length - 1).toLowerCase(),
-  };
+  try {
+    // Validate name
+    if (!this.name || this.name.trim().length === 0) {
+      throw new Error('Name cannot be empty');
+    }
 
-  // Calculate letter analysis
-  const vowels = (this.name.match(/[aeiou]/gi) || []).length;
-  const consonants = this.name.length - vowels;
+    // Remove extra spaces and special characters
+    const cleanName = this.name.trim().replace(/\s+/g, ' ');
 
-  this.letterAnalysis = {
-    vowels,
-    consonants,
-    firstLetter: getLetterNature(this.name.charAt(0)),
-    lastLetter: getLetterNature(this.name.charAt(this.name.length - 1)),
-  };
+    this.metadata = {
+      length: cleanName.length,
+      firstLetter: cleanName.charAt(0).toLowerCase(),
+      lastLetter: cleanName.charAt(cleanName.length - 1).toLowerCase(),
+    };
 
-  // Calculate numerology
-  this.numerology = calculateNumerology(this.name);
+    // Calculate letter analysis
+    const vowels = (cleanName.match(/[aeiou]/gi) || []).length;
+    const consonants = cleanName.length - vowels;
 
-  next();
+    this.letterAnalysis = {
+      vowels,
+      consonants,
+      firstLetter: getLetterNature(cleanName.charAt(0)),
+      lastLetter: getLetterNature(cleanName.charAt(cleanName.length - 1)),
+    };
+
+    // Calculate numerology
+    this.numerology = calculateNumerology(cleanName);
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Instance methods
@@ -241,13 +262,9 @@ nameSchema.index(
   }
 );
 
-nameSchema.index(
-  {
-    religion: 1,
-    regions: 1,
-  },
-  { background: true }
-);
+// Using sparse indexes for the array fields
+nameSchema.index({ religion: 1 }, { sparse: true, background: true });
+nameSchema.index({ regions: 1 }, { sparse: true, background: true });
 
 nameSchema.index(
   {

@@ -26,6 +26,7 @@ router.get('/similar/:name', nameController.getSimilarNames);
 
 // Admin routes
 router.use(protect);
+router.get('/all', nameController.getAllNames);
 router.post('/create', nameController.createName);
 router.put('/update/:id', nameController.updateName);
 router.delete('/delete/:id', nameController.deleteName);

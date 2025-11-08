@@ -581,9 +581,67 @@ export default {
   },
 
   // Admin routes
+  getAllNames: async (req, res, next) => {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        sortBy = 'createdAt',
+        order = 'desc',
+        gender,
+        origin,
+        religion,
+        searchQuery,
+      } = req.query;
+
+      const query = {};
+
+      // Apply filters if provided
+      if (gender) query.gender = gender;
+      if (origin) query.origin = new RegExp(origin, 'i');
+      if (religion) query.religion = religion;
+      if (searchQuery) {
+        query.$or = [
+          { name: new RegExp(searchQuery, 'i') },
+          { meaning: new RegExp(searchQuery, 'i') },
+        ];
+      }
+
+      const skip = (Number(page) - 1) * Number(limit);
+
+      // Determine sort order
+      const sortOrder = {};
+      sortOrder[sortBy] = order === 'desc' ? -1 : 1;
+
+      const [names, total] = await Promise.all([
+        Name.find(query)
+          .select(
+            'name meaning gender origin religion regions popularity createdAt'
+          )
+          .sort(sortOrder)
+          .skip(skip)
+          .limit(Number(limit)),
+        Name.countDocuments(query),
+      ]);
+
+      httpResponse(req, res, 200, 'Names retrieved successfully', {
+        names,
+        pagination: {
+          currentPage: Number(page),
+          totalPages: Math.ceil(total / Number(limit)),
+          totalItems: total,
+          hasMore: skip + names.length < total,
+        },
+      });
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
   createName: async (req, res, next) => {
     try {
       const nameData = req.body;
+      console.log(nameData);
 
       if (
         !nameData.name ||
