@@ -103,6 +103,71 @@ const nameSchema = new mongoose.Schema(
   }
 );
 
+function calculateNumerology(name) {
+  const numerologyMap = {
+    a: 1,
+    j: 1,
+    s: 1,
+    b: 2,
+    k: 2,
+    t: 2,
+    c: 3,
+    l: 3,
+    u: 3,
+    d: 4,
+    m: 4,
+    v: 4,
+    e: 5,
+    n: 5,
+    w: 5,
+    f: 6,
+    o: 6,
+    x: 6,
+    g: 7,
+    p: 7,
+    y: 7,
+    h: 8,
+    q: 8,
+    z: 8,
+    i: 9,
+    r: 9,
+  };
+
+  const numerologyTraits = {
+    1: ['leader', 'independent', 'ambitious', 'original', 'confident'],
+    2: ['diplomatic', 'cooperative', 'sensitive', 'peaceful', 'adaptable'],
+    3: ['creative', 'expressive', 'social', 'optimistic', 'artistic'],
+    4: ['practical', 'reliable', 'stable', 'organized', 'determined'],
+    5: ['adventurous', 'freedom-loving', 'versatile', 'curious', 'energetic'],
+    6: ['nurturing', 'responsible', 'loving', 'harmonious', 'supportive'],
+    7: ['analytical', 'spiritual', 'intelligent', 'mysterious', 'intuitive'],
+    8: ['powerful', 'successful', 'ambitious', 'material', 'authoritative'],
+    9: ['compassionate', 'humanitarian', 'generous', 'wise', 'artistic'],
+  };
+
+  let sum = 0;
+  name
+    .toLowerCase()
+    .split('')
+    .forEach(letter => {
+      if (numerologyMap[letter]) {
+        sum += numerologyMap[letter];
+      }
+    });
+
+  // Reduce to single digit (except 11, 22, 33 which are master numbers)
+  while (sum > 9 && sum !== 11 && sum !== 22 && sum !== 33) {
+    sum = String(sum)
+      .split('')
+      .reduce((a, b) => Number(a) + Number(b), 0);
+  }
+
+  return {
+    number: sum,
+    traits: numerologyTraits[sum] || [],
+  };
+}
+
 // Document middleware
 nameSchema.pre('save', function (next) {
   this.metadata = {
@@ -121,6 +186,10 @@ nameSchema.pre('save', function (next) {
     firstLetter: getLetterNature(this.name.charAt(0)),
     lastLetter: getLetterNature(this.name.charAt(this.name.length - 1)),
   };
+
+  // Calculate numerology
+  this.numerology = calculateNumerology(this.name);
+
   next();
 });
 
@@ -192,7 +261,30 @@ function getLetterNature(letter) {
   const letterMap = {
     a: { nature: 'spiritual', element: 'air', ruling: 'sun' },
     b: { nature: 'practical', element: 'earth', ruling: 'mercury' },
-    // Add more letter mappings...
+    c: { nature: 'emotional', element: 'water', ruling: 'moon' },
+    d: { nature: 'practical', element: 'earth', ruling: 'mars' },
+    e: { nature: 'intellectual', element: 'air', ruling: 'venus' },
+    f: { nature: 'adaptable', element: 'fire', ruling: 'mercury' },
+    g: { nature: 'mysterious', element: 'water', ruling: 'neptune' },
+    h: { nature: 'material', element: 'earth', ruling: 'saturn' },
+    i: { nature: 'spiritual', element: 'fire', ruling: 'sun' },
+    j: { nature: 'powerful', element: 'fire', ruling: 'jupiter' },
+    k: { nature: 'dramatic', element: 'fire', ruling: 'mars' },
+    l: { nature: 'artistic', element: 'air', ruling: 'venus' },
+    m: { nature: 'emotional', element: 'water', ruling: 'moon' },
+    n: { nature: 'creative', element: 'water', ruling: 'neptune' },
+    o: { nature: 'practical', element: 'earth', ruling: 'saturn' },
+    p: { nature: 'mental', element: 'air', ruling: 'uranus' },
+    q: { nature: 'mysterious', element: 'water', ruling: 'pluto' },
+    r: { nature: 'dynamic', element: 'fire', ruling: 'sun' },
+    s: { nature: 'emotional', element: 'water', ruling: 'moon' },
+    t: { nature: 'creative', element: 'earth', ruling: 'mars' },
+    u: { nature: 'intuitive', element: 'water', ruling: 'jupiter' },
+    v: { nature: 'spiritual', element: 'air', ruling: 'mercury' },
+    w: { nature: 'sensitive', element: 'water', ruling: 'uranus' },
+    x: { nature: 'magnetic', element: 'fire', ruling: 'uranus' },
+    y: { nature: 'intuitive', element: 'air', ruling: 'venus' },
+    z: { nature: 'mystical', element: 'water', ruling: 'pluto' },
   };
 
   return (

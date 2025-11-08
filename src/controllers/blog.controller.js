@@ -40,26 +40,31 @@ export default {
   },
 
   getBlogBySlug: async (req, res, next) => {
+    console.log('Get blog by slug working');
+    console.log(req.params.slug);
     try {
-      if (!req.params.slug) {
-        httpError(next, 'Blog slug is required', req, 400);
+      const { slug } = req.params;
+      if (!slug) {
+        httpError(next, 'Slug is required', req, 400);
         return;
       }
 
-      const blog = await Blog.findOne({
-        slug: req.params.slug,
-        status: 'published',
-      }).populate('author', 'name avatar');
+      // If user is authenticated allow any status, otherwise only published
+      const query = req.user ? { slug } : { slug, status: 'published' };
+
+      const blog = await Blog.findOne(query)
+        .populate('author', 'name avatar')
+        .exec();
 
       if (!blog) {
         httpError(next, 'Blog not found', req, 404);
         return;
       }
 
-      // Update views in background
-      Blog.findByIdAndUpdate(blog._id, {
-        $inc: { views: 1 },
-      }).exec();
+      // increment views asynchronously for published blogs only
+      if (blog.status === 'published') {
+        Blog.findByIdAndUpdate(blog._id, { $inc: { views: 1 } }).exec();
+      }
 
       httpResponse(req, res, 200, 'Blog retrieved successfully', blog);
     } catch (error) {
@@ -67,10 +72,40 @@ export default {
     }
   },
 
+  getBlogById: async (req, res, next) => {
+    console.log('Get blog by ID working');
+    console.log(req.params.blogId);
+    try {
+      const { blogId } = req.params;
+      if (!blogId) {
+        httpError(next, 'Blog ID is required', req, 400);
+        return;
+      }
+
+      const blog = await Blog.findOne({ _id: blogId })
+        .populate('author', 'name avatar')
+        .exec();
+
+      if (!blog) {
+        httpError(next, 'Blog not found', req, 404);
+        return;
+      }
+
+      httpResponse(req, res, 200, 'Blog retrieved successfully', blog);
+    } catch (error) {
+      // handle cast error (invalid ObjectId) as not found
+      if (error.name === 'CastError') {
+        httpError(next, 'Blog not found', req, 404);
+        return;
+      }
+      httpError(next, error, req, 500);
+    }
+  },
+
   getBlogsByCategory: async (req, res, next) => {
     try {
-      const { page = 1, limit = 10, status = 'published' } = req.query;
       const { category } = req.params;
+      const { page = 1, limit = 10, status = 'published' } = req.query;
 
       if (!category) {
         httpError(next, 'Category is required', req, 400);
@@ -78,7 +113,17 @@ export default {
       }
 
       const skip = (Number(page) - 1) * Number(limit);
-      const query = { category, status };
+
+      // determine status filter: authenticated users can request 'all', otherwise default to published
+      let statusFilter = status;
+      if (!req.user && status !== 'published') {
+        statusFilter = 'published';
+      }
+
+      const query =
+        statusFilter === 'all'
+          ? { category }
+          : { category, status: statusFilter };
 
       const [blogs, total] = await Promise.all([
         Blog.find(query)
@@ -86,12 +131,13 @@ export default {
           .select('-content')
           .sort({ createdAt: -1 })
           .skip(skip)
-          .limit(Number(limit)),
+          .limit(Number(limit))
+          .exec(),
         Blog.countDocuments(query),
       ]);
 
       if (!blogs || blogs.length === 0) {
-        httpError(next, 'No blogs found in this category', req, 404);
+        httpError(next, 'No blogs found for this category', req, 404);
         return;
       }
 
@@ -111,25 +157,27 @@ export default {
 
   searchBlogs: async (req, res, next) => {
     try {
-      const { query } = req.params;
+      // support both route param and query param for query string
+      const q = req.params.query || req.query.q;
       const { page = 1, limit = 10 } = req.query;
 
-      if (!query || query.length < 2) {
+      if (!q || q.length < 2) {
         httpError(next, 'Search query must be at least 2 characters', req, 400);
         return;
       }
 
       const skip = (Number(page) - 1) * Number(limit);
+
+      // base status filter: unauthenticated users only see published posts
+      const statusClause = req.user ? {} : { status: 'published' };
+
       const searchQuery = {
-        $and: [
-          { status: 'published' },
-          {
-            $or: [
-              { title: { $regex: query, $options: 'i' } },
-              { content: { $regex: query, $options: 'i' } },
-              { tags: { $in: [new RegExp(query, 'i')] } },
-            ],
-          },
+        ...statusClause,
+        $or: [
+          { title: { $regex: q, $options: 'i' } },
+          { content: { $regex: q, $options: 'i' } },
+          { tags: { $in: [new RegExp(q, 'i')] } },
+          { excerpt: { $regex: q, $options: 'i' } },
         ],
       };
 
@@ -139,7 +187,8 @@ export default {
           .select('title excerpt slug category tags author createdAt updatedAt')
           .sort({ createdAt: -1 })
           .skip(skip)
-          .limit(Number(limit)),
+          .limit(Number(limit))
+          .exec(),
         Blog.countDocuments(searchQuery),
       ]);
 
@@ -268,24 +317,39 @@ export default {
         return;
       }
 
-      const existingBlog = await Blog.findOne({
-        _id: id,
-        author: req.user._id,
-      });
+      const existingBlog = await Blog.findOne({ _id: id });
 
       if (!existingBlog) {
         if (req.file) await cleanupTemp(req.file);
-        httpError(next, 'Blog not found or unauthorized', req, 404);
+        httpError(next, 'Blog not found', req, 404);
         return;
       }
 
+      let parsedTags = existingBlog.tags;
+      if (tags) {
+        try {
+          parsedTags = Array.isArray(tags)
+            ? tags
+            : typeof tags === 'string'
+              ? JSON.parse(tags)
+              : [];
+
+          if (!Array.isArray(parsedTags)) {
+            throw new Error('Tags must be an array');
+          }
+        } catch (error) {
+          if (req.file) await cleanupTemp(req.file);
+          httpError(next, 'Invalid tags format', req, 400);
+          return;
+        }
+      }
+
       const updateData = {
-        // only set fields that are provided; keep others unchanged
         ...(title !== undefined && { title }),
         ...(excerpt !== undefined && { excerpt }),
         ...(content !== undefined && { content }),
         ...(category !== undefined && { category }),
-        tags: Array.isArray(tags) ? tags : existingBlog.tags,
+        ...(tags && { tags: parsedTags }),
         ...(metaTitle !== undefined && { metaTitle }),
         ...(metaDescription !== undefined && { metaDescription }),
         ...(status !== undefined && { status }),
@@ -305,27 +369,21 @@ export default {
             responsive: true,
           });
 
-          // Prefer stored public_id if available, fallback to URL parsing
-          const oldPublicId =
-            existingBlog.featuredImage?.public_id ||
-            (existingBlog.featuredImage?.url
-              ? existingBlog.featuredImage.url.split('/').pop().split('.')[0]
-              : null);
+          const oldPublicId = existingBlog.featuredImage?.url
+            ? existingBlog.featuredImage.url.split('/').pop().split('.')[0]
+            : null;
 
           if (oldPublicId) {
             try {
               await cloudinary.delete(oldPublicId);
             } catch (err) {
-              // log but don't fail the whole request for a delete error
               console.warn('Failed to delete old image from Cloudinary', err);
             }
           }
 
-          // Update featured image data
           updateData.featuredImage = {
             url: result.secure_url,
-            alt: featuredImageAlt || title || existingBlog.featuredImage?.alt,
-            public_id: result.public_id || null,
+            alt: featuredImageAlt || existingBlog.featuredImage?.alt,
           };
 
           await cleanupTemp(req.file);
@@ -334,37 +392,35 @@ export default {
           httpError(next, 'Error uploading featured image', req, 500);
           return;
         }
-      } else if (featuredImageAlt && existingBlog.featuredImage) {
-        // Update only alt text if provided without new image
+      } else if (featuredImageAlt) {
         updateData.featuredImage = {
-          ...existingBlog.featuredImage,
+          url: existingBlog.featuredImage?.url,
           alt: featuredImageAlt,
         };
       }
 
-      // Update blog with new data
-      const updatedBlog = await Blog.findOneAndUpdate(
-        {
-          _id: id,
-          author: req.user._id,
-        },
-        {
-          $set: updateData,
-        },
-        {
-          new: true,
-          runValidators: true,
+      try {
+        Object.assign(existingBlog, updateData);
+
+        await existingBlog.save();
+
+        const updatedBlog = await Blog.findById(existingBlog._id).populate(
+          'author',
+          'name avatar'
+        );
+
+        if (!updatedBlog) {
+          httpError(next, 'Failed to update blog', req, 400);
+          return;
         }
-      ).populate('author', 'name avatar');
 
-      if (!updatedBlog) {
-        httpError(next, 'Failed to update blog', req, 400);
-        return;
+        httpResponse(req, res, 200, 'Blog updated successfully', {
+          blog: updatedBlog,
+        });
+      } catch (error) {
+        console.log(error);
+        throw error;
       }
-
-      httpResponse(req, res, 200, 'Blog updated successfully', {
-        blog: updatedBlog,
-      });
     } catch (error) {
       if (req.file) await cleanupTemp(req.file);
       httpError(next, error, req, 500);

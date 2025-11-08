@@ -8,6 +8,7 @@ const router = Router();
 router.get('/', blogController.getAllBlogs);
 router.get('/count', blogController.getBlogCounts);
 router.get('/:slug', blogController.getBlogBySlug);
+router.get('/id/:blogId', blogController.getBlogById);
 router.get('/category/:category', blogController.getBlogsByCategory);
 router.get('/search/:query', blogController.searchBlogs);
 

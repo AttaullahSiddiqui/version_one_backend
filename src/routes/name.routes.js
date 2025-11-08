@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import nameController from '#controllers/name.controller.js';
-import { protect, validatePassKey } from '#middleware/auth.middleware.js';
+import { protect } from '#middleware/auth.middleware.js';
 
 const router = Router();
 
+// Public routes
 router.get('/trending', nameController.getTrendingNames);
 router.get('/top-100', nameController.getTopNames);
 router.get('/region/:region', nameController.getNamesByRegion);
@@ -21,13 +22,16 @@ router.post('/generate', nameController.generateNames);
 router.get('/zodiac/:sign', nameController.getNamesByZodiac);
 router.get('/element/:element', nameController.getNamesByElement);
 router.get('/analysis/:name', nameController.getLetterAnalysis);
+router.get('/similar/:name', nameController.getSimilarNames);
 
+// Admin routes
 router.use(protect);
-router.use(validatePassKey('739639336427396'));
 router.post('/create', nameController.createName);
 router.put('/update/:id', nameController.updateName);
 router.delete('/delete/:id', nameController.deleteName);
 router.post('/import', nameController.importNames);
 router.put('/trending/update', nameController.updateTrendingNames);
+router.get('/statistics', nameController.getNameStatistics);
+router.post('/bulk-update', nameController.bulkUpdateNames);
 
 export default router;
