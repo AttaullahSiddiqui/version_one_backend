@@ -98,6 +98,30 @@ export default {
         return;
       }
 
+      if (names.length > 0) {
+        // Get current documents to calculate new scores
+        const namesWithCurrentStats = await Name.find({
+          _id: { $in: names.map(name => name._id) },
+        }).select('popularity');
+
+        const bulkOps = namesWithCurrentStats.map(name => ({
+          updateOne: {
+            filter: { _id: name._id },
+            update: {
+              $inc: { 'popularity.searchAppearances': 1 },
+              $set: {
+                'popularity.score':
+                  name.popularity.views * 0.6 +
+                  (name.popularity.searchAppearances + 1) * 0.3 +
+                  (name.popularity.trend || 0) * 0.1,
+              },
+            },
+          },
+        }));
+
+        await Name.bulkWrite(bulkOps);
+      }
+
       httpResponse(req, res, 200, 'Search results retrieved successfully', {
         names,
         pagination: {
@@ -279,7 +303,10 @@ export default {
       }
 
       const nameData = await Name.findOne({
-        name: new RegExp(`^${name}$`, 'i'),
+        $or: [
+          { name: new RegExp(`^${name}$`, 'i') },
+          { slug: name.toLowerCase() },
+        ],
       }).select('-popularity.yearlyRanks');
 
       if (!nameData) {
@@ -580,6 +607,91 @@ export default {
     }
   },
 
+  // Popularity tracking functions
+  incrementNameView: async (req, res, next) => {
+    try {
+      const { nameId } = req.params;
+
+      // First get the current name document
+      const currentName = await Name.findById(nameId);
+      if (!currentName) {
+        httpError(next, 'Name not found', req, 404);
+        return;
+      }
+
+      // Increment views and recalculate score
+      const views = currentName.popularity.views + 1;
+      const searchAppearances = currentName.popularity.searchAppearances;
+      const trend = currentName.popularity.trend || 0;
+
+      // Calculate new score using the formula
+      const newScore = views * 0.6 + searchAppearances * 0.3 + trend * 0.1;
+
+      const name = await Name.findByIdAndUpdate(
+        nameId,
+        {
+          $inc: { 'popularity.views': 1 },
+          $set: { 'popularity.score': newScore },
+        },
+        { new: true }
+      );
+
+      if (!name) {
+        httpError(next, 'Name not found', req, 404);
+        return;
+      }
+
+      httpResponse(req, res, 200, 'View count updated successfully', name);
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
+  incrementSearchAppearance: async (req, res, next) => {
+    try {
+      const { nameId } = req.params;
+
+      // First get the current name document
+      const currentName = await Name.findById(nameId);
+      if (!currentName) {
+        httpError(next, 'Name not found', req, 404);
+        return;
+      }
+
+      // Increment search appearances and recalculate score
+      const views = currentName.popularity.views;
+      const searchAppearances = currentName.popularity.searchAppearances + 1;
+      const trend = currentName.popularity.trend || 0;
+
+      // Calculate new score using the formula
+      const newScore = views * 0.6 + searchAppearances * 0.3 + trend * 0.1;
+
+      const name = await Name.findByIdAndUpdate(
+        nameId,
+        {
+          $inc: { 'popularity.searchAppearances': 1 },
+          $set: { 'popularity.score': newScore },
+        },
+        { new: true }
+      );
+
+      if (!name) {
+        httpError(next, 'Name not found', req, 404);
+        return;
+      }
+
+      httpResponse(
+        req,
+        res,
+        200,
+        'Search appearance updated successfully',
+        name
+      );
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
   // Admin routes
   getAllNames: async (req, res, next) => {
     try {
@@ -590,16 +702,39 @@ export default {
         order = 'desc',
         gender,
         origin,
+        region,
         religion,
         searchQuery,
       } = req.query;
+      console.log(req.query);
 
       const query = {};
 
       // Apply filters if provided
-      if (gender) query.gender = gender;
+      if (gender && gender !== 'all') query.gender = gender;
       if (origin) query.origin = new RegExp(origin, 'i');
-      if (religion) query.religion = religion;
+
+      if (region) {
+        const regions = Array.isArray(region)
+          ? region
+          : region.split(',').map(r => r.trim());
+        query.regions = { $in: regions };
+      }
+
+      if (religion) {
+        const religions = Array.isArray(religion)
+          ? religion
+          : religion.split(',').map(r => r.trim());
+        query.religion = { $in: religions };
+      }
+
+      if (req.query.region) {
+        const regions = Array.isArray(req.query.region)
+          ? req.query.region
+          : req.query.region.split(',').map(r => r.trim());
+        query.regions = { $in: regions };
+      }
+
       if (searchQuery) {
         query.$or = [
           { name: new RegExp(searchQuery, 'i') },
@@ -609,14 +744,25 @@ export default {
 
       const skip = (Number(page) - 1) * Number(limit);
 
-      // Determine sort order
+      // Define sort field mappings for nested fields
+      const sortFieldMappings = {
+        views: 'popularity.views',
+        score: 'popularity.score',
+        trend: 'popularity.trend',
+        searchAppearances: 'popularity.searchAppearances',
+        createdAt: 'createdAt',
+        name: 'name',
+      };
+
       const sortOrder = {};
-      sortOrder[sortBy] = order === 'desc' ? -1 : 1;
+      // Use the mapping if it exists, otherwise use the sortBy value directly
+      sortOrder[sortFieldMappings[sortBy] || sortBy] =
+        order === 'desc' ? -1 : 1;
 
       const [names, total] = await Promise.all([
         Name.find(query)
           .select(
-            'name meaning gender origin religion regions popularity createdAt'
+            'name meaning gender origin religion regions popularity createdAt slug'
           )
           .sort(sortOrder)
           .skip(skip)
@@ -670,163 +816,28 @@ export default {
 
   updateName: async (req, res, next) => {
     try {
-      const { id } = req.params;
+      const { slug } = req.params;
       const updateData = req.body;
 
-      // If the name string is being changed, we must recalculate fields
-      if (updateData.name) {
-        // compute metadata
-        const nameStr = updateData.name;
-        updateData.metadata = {
-          length: nameStr.length,
-          firstLetter: nameStr.charAt(0).toLowerCase(),
-          lastLetter: nameStr.charAt(nameStr.length - 1).toLowerCase(),
-        };
+      const existingName = await Name.findOne({ slug: slug.toLowerCase() });
 
-        // compute letterAnalysis
-        const vowels = (nameStr.match(/[aeiou]/gi) || []).length;
-        const consonants = nameStr.length - vowels;
-
-        // reuse small helper for letter nature (duplicate of model mapping)
-        const letterNatureMap = {
-          a: { nature: 'spiritual', element: 'air', ruling: 'sun' },
-          b: { nature: 'practical', element: 'earth', ruling: 'mercury' },
-          c: { nature: 'emotional', element: 'water', ruling: 'moon' },
-          d: { nature: 'practical', element: 'earth', ruling: 'mars' },
-          e: { nature: 'intellectual', element: 'air', ruling: 'venus' },
-          f: { nature: 'adaptable', element: 'fire', ruling: 'mercury' },
-          g: { nature: 'mysterious', element: 'water', ruling: 'neptune' },
-          h: { nature: 'material', element: 'earth', ruling: 'saturn' },
-          i: { nature: 'spiritual', element: 'fire', ruling: 'sun' },
-          j: { nature: 'powerful', element: 'fire', ruling: 'jupiter' },
-          k: { nature: 'dramatic', element: 'fire', ruling: 'mars' },
-          l: { nature: 'artistic', element: 'air', ruling: 'venus' },
-          m: { nature: 'emotional', element: 'water', ruling: 'moon' },
-          n: { nature: 'creative', element: 'water', ruling: 'neptune' },
-          o: { nature: 'practical', element: 'earth', ruling: 'saturn' },
-          p: { nature: 'mental', element: 'air', ruling: 'uranus' },
-          q: { nature: 'mysterious', element: 'water', ruling: 'pluto' },
-          r: { nature: 'dynamic', element: 'fire', ruling: 'sun' },
-          s: { nature: 'emotional', element: 'water', ruling: 'moon' },
-          t: { nature: 'creative', element: 'earth', ruling: 'mars' },
-          u: { nature: 'intuitive', element: 'water', ruling: 'jupiter' },
-          v: { nature: 'spiritual', element: 'air', ruling: 'mercury' },
-          w: { nature: 'sensitive', element: 'water', ruling: 'uranus' },
-          x: { nature: 'magnetic', element: 'fire', ruling: 'uranus' },
-          y: { nature: 'intuitive', element: 'air', ruling: 'venus' },
-          z: { nature: 'mystical', element: 'water', ruling: 'pluto' },
-        };
-
-        const getNature = ch =>
-          letterNatureMap[ch.toLowerCase()] || {
-            nature: 'unknown',
-            element: 'unknown',
-            ruling: 'unknown',
-          };
-
-        updateData.letterAnalysis = {
-          vowels,
-          consonants,
-          firstLetter: getNature(nameStr.charAt(0)),
-          lastLetter: getNature(nameStr.charAt(nameStr.length - 1)),
-        };
-
-        // calculate numerology
-        const numerologyMap = {
-          a: 1,
-          j: 1,
-          s: 1,
-          b: 2,
-          k: 2,
-          t: 2,
-          c: 3,
-          l: 3,
-          u: 3,
-          d: 4,
-          m: 4,
-          v: 4,
-          e: 5,
-          n: 5,
-          w: 5,
-          f: 6,
-          o: 6,
-          x: 6,
-          g: 7,
-          p: 7,
-          y: 7,
-          h: 8,
-          q: 8,
-          z: 8,
-          i: 9,
-          r: 9,
-        };
-
-        let sum = 0;
-        nameStr
-          .toLowerCase()
-          .split('')
-          .forEach(letter => {
-            if (numerologyMap[letter]) sum += numerologyMap[letter];
-          });
-        while (sum > 9 && sum !== 11 && sum !== 22 && sum !== 33) {
-          sum = String(sum)
-            .split('')
-            .reduce((a, b) => Number(a) + Number(b), 0);
-        }
-        const numerologyTraits = {
-          1: ['leader', 'independent', 'ambitious', 'original', 'confident'],
-          2: [
-            'diplomatic',
-            'cooperative',
-            'sensitive',
-            'peaceful',
-            'adaptable',
-          ],
-          3: ['creative', 'expressive', 'social', 'optimistic', 'artistic'],
-          4: ['practical', 'reliable', 'stable', 'organized', 'determined'],
-          5: [
-            'adventurous',
-            'freedom-loving',
-            'versatile',
-            'curious',
-            'energetic',
-          ],
-          6: ['nurturing', 'responsible', 'loving', 'harmonious', 'supportive'],
-          7: [
-            'analytical',
-            'spiritual',
-            'intelligent',
-            'mysterious',
-            'intuitive',
-          ],
-          8: [
-            'powerful',
-            'successful',
-            'ambitious',
-            'material',
-            'authoritative',
-          ],
-          9: ['compassionate', 'humanitarian', 'generous', 'wise', 'artistic'],
-        };
-
-        updateData.numerology = {
-          number: sum,
-          traits: numerologyTraits[sum] || [],
-        };
-      }
-
-      // run update (validators on)
-      const name = await Name.findByIdAndUpdate(id, updateData, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!name) {
+      if (!existingName) {
         httpError(next, 'Name not found', req, 404);
         return;
       }
 
-      httpResponse(req, res, 200, 'Name updated successfully', name);
+      Object.assign(existingName, updateData);
+
+      try {
+        const updatedName = await existingName.save();
+        httpResponse(req, res, 200, 'Name updated successfully', updatedName);
+      } catch (err) {
+        if (err.code === 11000) {
+          httpError(next, 'Name or slug already exists', req, 409);
+          return;
+        }
+        throw err;
+      }
     } catch (error) {
       httpError(next, error, req, 400);
     }
@@ -834,8 +845,14 @@ export default {
 
   deleteName: async (req, res, next) => {
     try {
-      const { id } = req.params;
-      const name = await Name.findByIdAndDelete(id);
+      if (!req.params.id) {
+        httpError(next, 'Name ID is required', req, 400);
+        return;
+      }
+
+      const name = await Name.findByIdAndDelete({
+        _id: req.params.id,
+      });
 
       if (!name) {
         httpError(next, 'Name not found', req, 404);
@@ -987,10 +1004,36 @@ export default {
         };
       });
 
-      const result = await Name.insertMany(processed, { ordered: false });
+      let result;
+      try {
+        result = await Name.insertMany(processed, {
+          ordered: false,
+          rawResult: true,
+        });
+      } catch (error) {
+        // Handle partial success in bulk write
+        if (error.insertedDocs) {
+          httpResponse(req, res, 207, 'Names partially imported', {
+            success: {
+              imported: error.insertedDocs.length,
+              total: names.length,
+            },
+            error: {
+              message: 'Some names could not be imported',
+              details: error.writeErrors?.map(e => ({
+                index: e.index,
+                name: names[e.index].name,
+                error: e.code === 11000 ? 'Duplicate name' : e.errmsg,
+              })),
+            },
+          });
+          return;
+        }
+        throw error;
+      }
 
       httpResponse(req, res, 201, 'Names imported successfully', {
-        imported: result.length,
+        imported: result.insertedCount,
         total: names.length,
       });
     } catch (error) {
@@ -1130,6 +1173,29 @@ export default {
         'Letter analysis retrieved successfully',
         nameData
       );
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
+  // Slug-based name retrieval
+  getNameBySlug: async (req, res, next) => {
+    try {
+      const { slug } = req.params;
+
+      if (!slug) {
+        httpError(next, 'Slug is required', req, 400);
+        return;
+      }
+
+      const nameData = await Name.findOne({ slug: slug.toLowerCase() });
+
+      if (!nameData) {
+        httpError(next, 'Name not found', req, 404);
+        return;
+      }
+
+      httpResponse(req, res, 200, 'Name retrieved successfully', nameData);
     } catch (error) {
       httpError(next, error, req, 500);
     }

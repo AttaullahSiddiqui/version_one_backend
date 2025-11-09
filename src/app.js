@@ -35,8 +35,8 @@ app.get('/', (req, res) => {
 
 app.use('/system', systemRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/blogs', blogRoutes);
-app.use('/api/names', nameRoutes);
+app.use('/api/blog', blogRoutes);
+app.use('/api/name', nameRoutes);
 
 app.use(routeNotFound);
 

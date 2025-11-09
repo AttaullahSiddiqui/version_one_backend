@@ -40,49 +40,16 @@ export default {
   },
 
   getBlogBySlug: async (req, res, next) => {
-    console.log('Get blog by slug working');
+    console.log('Get blog by Slug working');
     console.log(req.params.slug);
     try {
       const { slug } = req.params;
       if (!slug) {
-        httpError(next, 'Slug is required', req, 400);
+        httpError(next, 'Blog Slug is required', req, 400);
         return;
       }
 
-      // If user is authenticated allow any status, otherwise only published
-      const query = req.user ? { slug } : { slug, status: 'published' };
-
-      const blog = await Blog.findOne(query)
-        .populate('author', 'name avatar')
-        .exec();
-
-      if (!blog) {
-        httpError(next, 'Blog not found', req, 404);
-        return;
-      }
-
-      // increment views asynchronously for published blogs only
-      if (blog.status === 'published') {
-        Blog.findByIdAndUpdate(blog._id, { $inc: { views: 1 } }).exec();
-      }
-
-      httpResponse(req, res, 200, 'Blog retrieved successfully', blog);
-    } catch (error) {
-      httpError(next, error, req, 500);
-    }
-  },
-
-  getBlogById: async (req, res, next) => {
-    console.log('Get blog by ID working');
-    console.log(req.params.blogId);
-    try {
-      const { blogId } = req.params;
-      if (!blogId) {
-        httpError(next, 'Blog ID is required', req, 400);
-        return;
-      }
-
-      const blog = await Blog.findOne({ _id: blogId })
+      const blog = await Blog.findOne({ slug })
         .populate('author', 'name avatar')
         .exec();
 
@@ -298,7 +265,7 @@ export default {
 
   updateBlog: async (req, res, next) => {
     try {
-      const { id } = req.params;
+      const { slug } = req.params;
       const {
         title,
         excerpt,
@@ -311,14 +278,13 @@ export default {
         featuredImageAlt,
       } = req.body;
 
-      if (!id) {
+      if (!slug) {
         if (req.file) await cleanupTemp(req.file);
-        httpError(next, 'Blog ID is required', req, 400);
+        httpError(next, 'Blog Slug is required', req, 400);
         return;
       }
 
-      const existingBlog = await Blog.findOne({ _id: id });
-
+      const existingBlog = await Blog.findOne({ slug });
       if (!existingBlog) {
         if (req.file) await cleanupTemp(req.file);
         httpError(next, 'Blog not found', req, 404);
@@ -436,12 +402,23 @@ export default {
 
       const blog = await Blog.findOne({
         _id: req.params.id,
-        author: req.user._id,
       });
 
       if (!blog) {
         httpError(next, 'Blog not found or unauthorized', req, 404);
         return;
+      }
+
+      if (blog.featuredImage?.url) {
+        try {
+          const publicId = blog.featuredImage.url
+            .split('/')
+            .pop()
+            .split('.')[0];
+          await cloudinary.delete(publicId);
+        } catch (err) {
+          console.warn('Failed to delete image from Cloudinary:', err);
+        }
       }
 
       await blog.deleteOne();

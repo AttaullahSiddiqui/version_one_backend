@@ -8,6 +8,11 @@ const nameSchema = new mongoose.Schema(
       trim: true,
       unique: true,
     },
+    slug: {
+      type: String,
+      unique: true,
+      lowercase: true,
+    },
     meaning: {
       type: String,
       required: [true, 'Meaning is required'],
@@ -27,7 +32,7 @@ const nameSchema = new mongoose.Schema(
     },
     religion: {
       type: [{ type: String }],
-      default: undefined,
+      default: [],
       validate: {
         validator: function (arr) {
           return arr === undefined || (Array.isArray(arr) && arr.length <= 10);
@@ -37,7 +42,7 @@ const nameSchema = new mongoose.Schema(
     },
     regions: {
       type: [{ type: String }],
-      default: undefined,
+      default: [],
       validate: {
         validator: function (arr) {
           return arr === undefined || (Array.isArray(arr) && arr.length <= 10);
@@ -51,6 +56,14 @@ const nameSchema = new mongoose.Schema(
         default: 0,
       },
       trend: {
+        type: Number,
+        default: 0,
+      },
+      views: {
+        type: Number,
+        default: 0,
+      },
+      searchAppearances: {
         type: Number,
         default: 0,
       },
@@ -178,6 +191,15 @@ function calculateNumerology(name) {
   };
 }
 
+function generateSlug(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove non-word chars (except spaces and hyphens)
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-'); // Replace multiple hyphens with single hyphen
+}
+
 nameSchema.pre('save', function (next) {
   try {
     // Validate name
@@ -187,6 +209,9 @@ nameSchema.pre('save', function (next) {
 
     // Remove extra spaces and special characters
     const cleanName = this.name.trim().replace(/\s+/g, ' ');
+
+    // Generate slug
+    this.slug = generateSlug(cleanName);
 
     this.metadata = {
       length: cleanName.length,
