@@ -33,6 +33,28 @@ export default {
     }
   },
 
+  // Counts and distributions for names (public)
+  getNameCounts: async (req, res, next) => {
+    try {
+      // Keep this simple: counts per gender and total
+      const [total, boy, girl, unisex] = await Promise.all([
+        Name.countDocuments(),
+        Name.countDocuments({ gender: 'boy' }),
+        Name.countDocuments({ gender: 'girl' }),
+        Name.countDocuments({ gender: 'unisex' }),
+      ]);
+
+      httpResponse(req, res, 200, 'Name counts retrieved successfully', {
+        total,
+        boy,
+        girl,
+        unisex,
+      });
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
   searchNames: async (req, res, next) => {
     try {
       const {
@@ -202,12 +224,16 @@ export default {
 
   getTopNames: async (req, res, next) => {
     try {
-      const { gender, year = new Date().getFullYear() - 1 } = req.query;
+      // Accept optional limit and optional gender filter. Remove year-based querying.
+      const { gender, limit = 20 } = req.query;
 
       const query = gender ? { gender } : {};
+      const max = Math.min(Math.max(Number(limit) || 20, 1), 200);
+
+      // Sort by current trend first, then overall popularity score
       const names = await Name.find(query)
-        .sort({ 'popularity.yearlyRanks': -1 })
-        .limit(100)
+        .sort({ 'popularity.trend': -1, 'popularity.score': -1 })
+        .limit(max)
         .select('name meaning gender popularity');
 
       if (!names.length) {

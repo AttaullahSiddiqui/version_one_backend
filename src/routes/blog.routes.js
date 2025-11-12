@@ -7,6 +7,7 @@ const router = Router();
 
 router.get('/', blogController.getAllBlogs);
 router.get('/count', blogController.getBlogCounts);
+router.get('/top', blogController.getTopBlogs);
 // router.get('/:slug', blogController.getBlogBySlug);
 router.get('/:slug', blogController.getBlogBySlug);
 router.get('/category/:category', blogController.getBlogsByCategory);

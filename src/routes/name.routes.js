@@ -6,7 +6,8 @@ const router = Router();
 
 // Public routes
 router.get('/trending', nameController.getTrendingNames);
-router.get('/top-100', nameController.getTopNames);
+router.get('/count', nameController.getNameCounts);
+router.get('/top', nameController.getTopNames);
 router.get('/slug/:slug', nameController.getNameBySlug);
 router.get('/region/:region', nameController.getNamesByRegion);
 router.get('/religion/:religion', nameController.getNamesByReligion);

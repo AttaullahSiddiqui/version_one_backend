@@ -308,13 +308,8 @@ export default {
         return;
       }
 
-      if (admin._id.toString() === req.user.id) {
-        httpError(next, 'You cannot delete your own account', req, 400);
-        return;
-      }
-
       if (admin.avatar && admin.avatar.public_id !== 'default_avatar_id') {
-        await cloudinary.destroy(admin.avatar.public_id);
+        await cloudinary.delete(admin.avatar.public_id);
       }
 
       await admin.deleteOne();

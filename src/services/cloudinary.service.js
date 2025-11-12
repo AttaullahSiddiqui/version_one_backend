@@ -65,7 +65,7 @@ export default {
   async delete(public_id) {
     if (!public_id) throw new Error('publicId is required to destroy an asset');
     try {
-      const result = await cloudinary.uploader.destroy(public_id, options);
+      const result = await cloudinary.uploader.destroy(public_id);
       return result;
     } catch (err) {
       throw err;

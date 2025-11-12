@@ -39,6 +39,34 @@ export default {
     }
   },
 
+  // Public: fetch top blogs (by views -> likes -> recency)
+  getTopBlogs: async (req, res, next) => {
+    try {
+      const { limit = 5 } = req.query;
+      const max = Math.min(Math.max(Number(limit) || 5, 1), 50);
+
+      const blogs = await Blog.find({ status: 'published' })
+        .populate('author', 'name avatar')
+        .select(
+          'title excerpt slug featuredImage author readTime createdAt views likes'
+        )
+        .sort({ views: -1, likes: -1, createdAt: -1 })
+        .limit(max)
+        .lean();
+
+      if (!blogs || blogs.length === 0) {
+        httpError(next, 'No top blogs found', req, 404);
+        return;
+      }
+
+      httpResponse(req, res, 200, 'Top blogs retrieved successfully', {
+        blogs,
+      });
+    } catch (error) {
+      httpError(next, error, req, 500);
+    }
+  },
+
   getBlogBySlug: async (req, res, next) => {
     console.log('Get blog by Slug working');
     console.log(req.params.slug);
