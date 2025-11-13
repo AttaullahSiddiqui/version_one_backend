@@ -457,16 +457,24 @@ export default {
   },
   getBlogCounts: async (req, res, next) => {
     try {
-      const [totalBlogs, publishedBlogs, draftBlogs] = await Promise.all([
-        Blog.countDocuments({}),
-        Blog.countDocuments({ status: 'published' }),
-        Blog.countDocuments({ status: 'draft' }),
-      ]);
+      const [totalBlogs, publishedBlogs, draftBlogs, distinctTags] =
+        await Promise.all([
+          Blog.countDocuments({}),
+          Blog.countDocuments({ status: 'published' }),
+          Blog.countDocuments({ status: 'draft' }),
+          Blog.distinct('tags'),
+        ]);
+
+      // distinctTags is an array of unique tag values; filter falsy values just in case
+      const uniqueTagsCount = Array.isArray(distinctTags)
+        ? distinctTags.filter(Boolean).length
+        : 0;
 
       httpResponse(req, res, 200, 'Blog counts retrieved successfully', {
         total: totalBlogs,
         published: publishedBlogs,
         drafts: draftBlogs,
+        uniqueTagsCount,
       });
     } catch (error) {
       httpError(next, error, req, 500);
